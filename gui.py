@@ -60,6 +60,10 @@ class MarkdownView(tk.Text):
         self.tag_configure("inline", font=(MONO, 11), background=INLINE_BG, foreground=INLINE_FG)
         self.tag_configure("code", font=(MONO, 11), background=CODE_BG, foreground=CODE_FG,
                            lmargin1=18, lmargin2=18, rmargin=18, spacing1=2, spacing3=2)
+        self.tag_configure("table", font=(MONO, 11), foreground=TEXT,
+                           lmargin1=18, lmargin2=18, spacing1=1, spacing3=1)
+        self.tag_configure("thead", font=(MONO, 11, "bold"), foreground="#0f172a",
+                           lmargin1=18, lmargin2=18, spacing1=1, spacing3=1)
         self.tag_configure("muted", foreground=MUTED, font=(UI, 11))
         self.tag_configure("rule", foreground=BORDER)
         self._rules = []
@@ -90,14 +94,22 @@ class MarkdownView(tk.Text):
             f.destroy()
         self._rules = []
         in_code = False
+        table = []
         for line in md.splitlines():
             if line.strip().startswith("```"):
+                if table:
+                    self._flush_table(table); table = []
                 in_code = not in_code
                 continue
             if in_code:
                 self._put((line or " ") + "\n", "code")
                 continue
             s = line.strip()
+            if s.startswith("|"):
+                table.append(s)
+                continue
+            if table:
+                self._flush_table(table); table = []
             if not s:
                 self._put("\n")
             elif s.startswith("### "):
@@ -120,8 +132,29 @@ class MarkdownView(tk.Text):
             else:
                 self._put_inline(line, "body")
                 self._put("\n", "body")
+        if table:
+            self._flush_table(table)
         self.configure(state="disabled")
         self.see("1.0")
+
+    _sep_re = re.compile(r"^:?-{2,}:?$")
+
+    def _flush_table(self, rows):
+        parsed = [[c.strip() for c in r.strip().strip("|").split("|")] for r in rows]
+        parsed = [c for c in parsed if not all(self._sep_re.match(x or "") for x in c)]
+        if not parsed:
+            return
+        ncol = max(len(r) for r in parsed)
+        for r in parsed:
+            r += [""] * (ncol - len(r))
+        w = [max(len(r[i]) for r in parsed) for i in range(ncol)]
+        self._put("\n")
+        for ri, r in enumerate(parsed):
+            self._put("  ".join(r[i].ljust(w[i]) for i in range(ncol)) + "\n",
+                      "thead" if ri == 0 else "table")
+            if ri == 0:
+                self._put("  ".join("-" * w[i] for i in range(ncol)) + "\n", "table")
+        self._put("\n")
 
     def _hr(self):
         self._put("\n")
