@@ -1,4 +1,4 @@
-name: build-windows-exe
+name: build
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
   workflow_dispatch:   # lets you run it manually from the Actions tab
 
 jobs:
-  build:
+  windows:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -25,5 +25,29 @@ jobs:
       - run: pyinstaller --onefile --windowed --name cyberagents --add-data ".env;." gui.py
       - uses: actions/upload-artifact@v4
         with:
-          name: cyberagents-exe
+          name: cyberagents-windows-exe
           path: dist/cyberagents.exe
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"     # ships tkinter on macOS
+      - run: pip install pyinstaller
+      - name: Write .env from secrets
+        run: |
+          cat > .env <<EOF
+          LLM_BASE_URL=${{ secrets.LLM_BASE_URL }}
+          LLM_API_KEY=${{ secrets.LLM_API_KEY }}
+          LLM_MODEL=${{ secrets.LLM_MODEL }}
+          EOF
+      # onedir + windowed -> proper .app (onefile+windowed unsupported on macOS)
+      - run: pyinstaller --windowed --name cyberagents --add-data ".env:." gui.py
+      - name: Zip .app
+        run: ditto -c -k --keepParent dist/cyberagents.app dist/cyberagents-macos.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cyberagents-macos-app
+          path: dist/cyberagents-macos.zip
