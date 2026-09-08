@@ -1,0 +1,21 @@
+name: build-windows-exe
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:   # lets you run it manually from the Actions tab
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"     # ships tkinter on Windows
+      - run: pip install pyinstaller
+      - run: pyinstaller --onefile --windowed --name cyberagents gui.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cyberagents-exe
+          path: dist/cyberagents.exe
