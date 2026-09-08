@@ -249,9 +249,12 @@ class App:
     def _work(self, agent, target):
         try:
             if agent == "scanning":
-                out = scanning.run_scan(target)
+                self.root.after(0, self.out.show_plain, f"[nmap] scanning {target} … (up to a minute)")
+                prior = {k: v for k, v in self.context.items() if k != "scanning"}
+                out = scanning.run_scanning(target, prior=prior)
                 self.context["scanning"] = out
-                self.root.after(0, self.out.render, f"## Scan — {target}\n```\n{out}\n```")
+                path = scanning.save_report(target, out)
+                self.root.after(0, self.out.render, out + f"\n\n---\n*Report saved: `{path}`*")
             elif agent == "exploitation":
                 if self.run_nmap.get():
                     self.root.after(0, self.out.show_plain, f"[nmap] scanning {target} … (up to a minute)")
