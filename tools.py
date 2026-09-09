@@ -24,6 +24,15 @@ def normalize_target(target):
         t = t.split(":", 1)[0]
     return t
 
+# name -> project homepage (shown as a clickable link in the tools dialog)
+HOMEPAGES = {
+    "nmap":       "https://nmap.org",
+    "metasploit": "https://www.metasploit.com",
+    "sqlmap":     "https://sqlmap.org",
+    "whois":      "https://github.com/rfc1036/whois",
+    "dig":        "https://www.isc.org/bind/",
+}
+
 # name -> (command on PATH, winget id, choco id, brew id)
 TOOLS = {
     "nmap":       ("nmap",       "Insecure.Nmap",                "nmap",           "nmap"),
