@@ -7,6 +7,7 @@ Only the exploitation agent has real logic; the other four are teammate stubs.
 import re
 import sys
 import threading
+import webbrowser
 import tkinter as tk
 from tkinter import ttk, messagebox
 
@@ -356,25 +357,75 @@ class App:
             self.root.after(700, self._progress_hide)  # let 100% show briefly
 
     def on_install(self):
-        missing = [t for t, ok in tools.status().items() if not ok]
-        if not missing:
-            messagebox.showinfo("Tools", "All tools already installed.")
-            return
-        if not messagebox.askyesno("Install tools", f"Install: {', '.join(missing)}?"):
-            return
-        self.out.show_plain(f"Installing {', '.join(missing)} …")
-        threading.Thread(target=self._install_work, args=(missing,), daemon=True).start()
-
-    def _install_work(self, missing):
-        lines = []
-        for t in missing:
-            ok, msg = tools.install(t)
-            lines.append(f"{t}: {'installed' if ok else 'FAILED'} ({msg})")
-            self.root.after(0, self.out.show_plain, "\n".join(lines))
-        self.root.after(0, self._refresh_status)
+        ToolsDialog(self.root, on_changed=self._refresh_status)
 
     def on_config(self):
         ConfigDialog(self.root, on_saved=self._refresh_status)
+
+
+class ToolsDialog(tk.Toplevel):
+    """List every tool used across recon/scanning/exploitation with its install
+    status. Each name links to the tool's homepage; missing tools get an Install
+    button, installed ones show a green 'installed' label."""
+
+    def __init__(self, parent, on_changed):
+        super().__init__(parent)
+        self.title("Tools")
+        self.on_changed = on_changed
+        self.resizable(False, False)
+        self.configure(bg=CARD)
+
+        frm = tk.Frame(self, bg=CARD, padx=16, pady=14)
+        frm.pack(fill="both", expand=True)
+        tk.Label(frm, text="Pentest tools", bg=CARD, fg=TEXT,
+                 font=(UI, 14, "bold")).grid(row=0, column=0, columnspan=3, sticky="w")
+        tk.Label(frm, text="used across the recon, scanning and exploitation phases",
+                 bg=CARD, fg=MUTED, font=(UI, 10)).grid(row=1, column=0, columnspan=3, sticky="w", pady=(0, 10))
+
+        self._rows = {}   # name -> (status_widget_holder frame)
+        for i, name in enumerate(tools.TOOLS, start=2):
+            link = tk.Label(frm, text=name, bg=CARD, fg=ACCENT_DK, font=(UI, 12, "underline"),
+                            cursor="hand2")
+            link.grid(row=i, column=0, sticky="w", pady=4, padx=(0, 16))
+            url = tools.HOMEPAGES.get(name)
+            if url:
+                link.bind("<Button-1>", lambda e, u=url: webbrowser.open(u))
+            holder = tk.Frame(frm, bg=CARD)
+            holder.grid(row=i, column=1, sticky="e")
+            self._rows[name] = holder
+            self._render_row(name)
+
+        ttk.Button(frm, text="Close", command=self.destroy).grid(
+            row=len(tools.TOOLS) + 2, column=0, columnspan=2, pady=(14, 0), sticky="e")
+
+    def _render_row(self, name, msg=None):
+        holder = self._rows[name]
+        for w in holder.winfo_children():
+            w.destroy()
+        installed = tools.status().get(name, False)
+        if installed:
+            tk.Label(holder, text="✓ installed", bg=CARD, fg=GREEN, font=(UI, 11, "bold")).pack(side="right")
+        else:
+            btn = ttk.Button(holder, text="Install", style="Accent.TButton",
+                             command=lambda: self._install(name))
+            btn.pack(side="right")
+            if msg:
+                tk.Label(holder, text=msg, bg=CARD, fg=INLINE_FG, font=(UI, 9)).pack(side="right", padx=(0, 8))
+
+    def _install(self, name):
+        holder = self._rows[name]
+        for w in holder.winfo_children():
+            w.destroy()
+        tk.Label(holder, text="installing…", bg=CARD, fg=MUTED, font=(UI, 11)).pack(side="right")
+        threading.Thread(target=self._install_work, args=(name,), daemon=True).start()
+
+    def _install_work(self, name):
+        ok, msg = tools.install(name)
+        self.after(0, self._install_done, name, ok, msg)
+
+    def _install_done(self, name, ok, msg):
+        self._render_row(name, None if ok else f"failed: {msg}")
+        self.on_changed()
 
 
 class ConfigDialog(tk.Toplevel):
