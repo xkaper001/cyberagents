@@ -242,9 +242,20 @@ class App:
         self.out.pack(side="left", fill="both", expand=True)
         self.out.show_plain("Pick an agent, enter a target, hit Run.")
 
+        # --- progress row (hidden until a run starts) ---
+        self.prog_text = tk.StringVar()
+        self.prog_row = tk.Frame(root, bg=BG)
+        self.prog_bar = ttk.Progressbar(self.prog_row, mode="determinate", maximum=100,
+                                        style="Run.Horizontal.TProgressbar")
+        self.prog_bar.pack(side="left", fill="x", expand=True)
+        tk.Label(self.prog_row, textvariable=self.prog_text, bg=BG, fg=ACCENT_DK,
+                 font=(MONO, 10), width=34, anchor="w").pack(side="left", padx=(10, 0))
+        # prog_row is packed/forgotten on demand in _progress_show/_hide
+
         # --- status bar ---
         self.status = tk.StringVar()
         bar = tk.Frame(root, bg=BG)
+        self.status_bar = bar
         bar.pack(fill="x", padx=16, pady=(0, 8))
         tk.Label(bar, textvariable=self.status, bg=BG, fg=MUTED, font=(UI, 10)).pack(side="left")
         self._refresh_status()
@@ -262,6 +273,8 @@ class App:
         st.configure("Card.TCheckbutton", background=CARD, font=(UI, 11))
         st.map("Card.TCheckbutton", background=[("active", CARD)])
         st.configure("TCheckbutton", font=(UI, 11))
+        st.configure("Run.Horizontal.TProgressbar", troughcolor=BORDER, background=ACCENT,
+                     bordercolor=BORDER, lightcolor=ACCENT, darkcolor=ACCENT, thickness=10)
 
     def _refresh_status(self):
         c = llm.resolve_config()
@@ -276,34 +289,57 @@ class App:
             return
         agent = self.agent.get()
         self.run_btn.configure(state="disabled")
+        self._progress_show()
+        self._set_progress(0.0, f"starting {agent}")
         self.out.show_plain(f"Running {agent} on {target}…")
         threading.Thread(target=self._work, args=(agent, target), daemon=True).start()
+
+    # ---- progress helpers ----
+    def _progress_show(self):
+        self.prog_row.pack(fill="x", padx=16, pady=(0, 2), before=self.status_bar)
+
+    def _progress_hide(self):
+        self.prog_row.pack_forget()
+
+    def _set_progress(self, frac, label):
+        """Thread-unsafe UI update — always call via root.after / _progress."""
+        pct = max(0, min(100, int(round(frac * 100))))
+        self.prog_bar["value"] = pct
+        self.prog_text.set(f"{pct:3d}%  ·  {label}")
+
+    def _progress(self, frac, label):
+        """Callback handed to agents; marshals to the UI thread."""
+        self.root.after(0, self._set_progress, frac, label)
 
     def _work(self, agent, target):
         try:
             if agent == "recon":
                 self.root.after(0, self.out.show_plain, f"[recon] gathering passive OSINT on {target} …")
                 prior = {k: v for k, v in self.context.items() if k != "recon"}
-                out = recon.run_recon(target, prior=prior)
+                out = recon.run_recon(target, prior=prior, progress=self._progress)
                 self.context["recon"] = out
                 path = recon.save_report(target, out)
+                self._progress(1.0, "done")
                 self.root.after(0, self.out.render, out + f"\n\n---\n*Report saved: `{path}`*")
             elif agent == "scanning":
                 self.root.after(0, self.out.show_plain, f"[nmap] scanning {target} … (up to a minute)")
                 prior = {k: v for k, v in self.context.items() if k != "scanning"}
-                out = scanning.run_scanning(target, prior=prior)
+                out = scanning.run_scanning(target, prior=prior, progress=self._progress)
                 self.context["scanning"] = out
                 path = scanning.save_report(target, out)
+                self._progress(1.0, "done")
                 self.root.after(0, self.out.render, out + f"\n\n---\n*Report saved: `{path}`*")
             elif agent == "exploitation":
                 if self.run_nmap.get():
+                    self._progress(0.1, "running nmap scan")
                     self.root.after(0, self.out.show_plain, f"[nmap] scanning {target} … (up to a minute)")
                     scan = tools.run_nmap(target)
                     self.context["scanning"] = scan
                 else:
                     scan = self.scan_in.get("1.0", "end").strip() or self.context.get("scanning", "")
                 prior = {k: v for k, v in self.context.items() if k != "exploitation"}
-                advice = exploitation.advise(target, scan, prior)
+                advice = exploitation.advise(target, scan, prior, progress=self._progress)
+                self._progress(1.0, "done")
                 self.context["exploitation"] = advice
                 path = exploitation.save_report(target, scan, advice)
                 src = "carried scan" if (not self.run_nmap.get() and not self.scan_in.get("1.0", "end").strip() and scan) else "this run"
@@ -317,6 +353,7 @@ class App:
         finally:
             self.root.after(0, lambda: self.run_btn.configure(state="normal"))
             self.root.after(0, self._refresh_status)
+            self.root.after(700, self._progress_hide)  # let 100% show briefly
 
     def on_install(self):
         missing = [t for t, ok in tools.status().items() if not ok]

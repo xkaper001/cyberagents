@@ -127,6 +127,7 @@ def run_scanning(
     script_scan: bool = False,
     vuln_scan: bool = False,
     ports: Optional[str] = None,
+    progress=None,
 ) -> str:
     """Run nmap scan, taking recon's scan focus from prior if available,
     and LLM-summarize into structured markdown.
@@ -140,12 +141,16 @@ def run_scanning(
     effective_vuln = vuln_scan or recon_vuln
 
     # Run nmap scan
+    if progress:
+        progress(0.05, "running nmap scan")
     raw_scan = run_scan(
         target,
         script_scan=effective_script,
         vuln_scan=effective_vuln,
         ports=effective_ports,
     )
+    if progress:
+        progress(0.65, "LLM analysis")
 
     # Build prompt for LLM summary
     prompt_parts = [

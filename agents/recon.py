@@ -281,12 +281,19 @@ def _probe_web_fingerprint(host: str) -> Dict[str, Any]:
     return results
 
 
-def gather_recon(target: str) -> str:
+def gather_recon(target: str, progress=None) -> str:
     """Collect passive OSINT data on a target (domain or IP).
 
     Gathers DNS records, WHOIS, SSL cert details, subdomains, reverse DNS,
     and HTTP headers without aggressive port scanning. Returns raw findings text.
+
+    `progress`, if given, is called as progress(frac, label) at each step
+    boundary (frac in [0,1]); the six gather steps span 0.0 -> 0.72.
     """
+    def _p(frac, label):
+        if progress:
+            progress(frac, label)
+
     host = tools.normalize_target(target)
     if not host:
         return "[no valid target specified]"
@@ -295,6 +302,7 @@ def gather_recon(target: str) -> str:
     sections.append(f"=== RECON TARGET ===\nHost: {host}\nIs IP: {_is_ip_address(host)}")
 
     # 1. Target DNS resolution & Reverse DNS
+    _p(0.00, "resolving DNS & reverse DNS")
     res_lines: List[str] = []
     resolved_ips: List[str] = []
     try:
@@ -319,16 +327,19 @@ def gather_recon(target: str) -> str:
     sections.append("=== HOST RESOLUTION & REVERSE DNS ===\n" + "\n".join(res_lines))
 
     # 2. DNS Records
+    _p(0.12, "querying DNS records")
     dns_records = _query_dns_records(host)
     sections.append("=== DNS RECORDS ===\n" + dns_records)
 
     # 3. WHOIS Information
+    _p(0.24, "WHOIS lookup")
     whois_res = tools.run_whois(host)
     if not whois_res or "[whois not installed]" in whois_res or "[whois error" in whois_res:
         whois_res = _query_socket_whois(host)
     sections.append("=== WHOIS REGISTRATION ===\n" + whois_res.strip())
 
     # 4. SSL/TLS Certificate & SANs
+    _p(0.36, "inspecting SSL certificate")
     cert_info, cert_sans = _inspect_ssl_cert(host)
     cert_lines: List[str] = []
     if cert_info:
@@ -348,6 +359,7 @@ def gather_recon(target: str) -> str:
     sections.append("=== SSL/TLS CERTIFICATE ===\n" + ("\n".join(cert_lines) if cert_lines else "(no certificate data retrieved)"))
 
     # 5. Subdomain Discovery
+    _p(0.48, "probing subdomains")
     discovered_subdomains: Dict[str, str] = {}
     for san in cert_sans:
         san_clean = san.lstrip("*.")
@@ -365,6 +377,7 @@ def gather_recon(target: str) -> str:
     sections.append("=== PASSIVE SUBDOMAINS ===\n" + sub_text)
 
     # 6. HTTP / HTTPS Web Fingerprint
+    _p(0.60, "web fingerprint")
     web_fp = _probe_web_fingerprint(host)
     web_lines: List[str] = []
     for proto in ["http", "https"]:
@@ -473,7 +486,7 @@ def _generate_local_recon_brief(target: str, raw_recon: str) -> str:
     return "\n".join(lines)
 
 
-def run_recon(target: str, prior: Optional[Dict[str, Any]] = None) -> str:
+def run_recon(target: str, prior: Optional[Dict[str, Any]] = None, progress=None) -> str:
     """Execute passive reconnaissance on a target and summarize via LLM.
 
     Returns structured markdown with Assets, Likely tech stack, and
@@ -482,7 +495,10 @@ def run_recon(target: str, prior: Optional[Dict[str, Any]] = None) -> str:
     provides an expert educational local analysis so the operator always
     gets actionable insights.
     """
-    raw_recon = gather_recon(target)
+    raw_recon = gather_recon(target, progress=progress)
+
+    if progress:
+        progress(0.75, "LLM synthesis")
 
     prompt_parts = [
         f"TARGET: {target}",
