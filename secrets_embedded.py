@@ -10,6 +10,7 @@ binary is extractable (strings/decompile). This module's values are never
 printed to the user.
 """
 import os
+import sys
 
 
 def _load_dotenv(path):
@@ -28,7 +29,17 @@ def _load_dotenv(path):
     return out
 
 
-_env = _load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
+def _find_env():
+    # 1. Next to the executable if running as a frozen PyInstaller bundle
+    if getattr(sys, "frozen", False):
+        exe_env = os.path.join(os.path.dirname(sys.executable), ".env")
+        if os.path.exists(exe_env):
+            return exe_env
+    # 2. Next to this file / extracted _MEIPASS directory
+    return os.path.join(os.path.dirname(__file__), ".env")
+
+
+_env = _load_dotenv(_find_env())
 
 EMBEDDED = {
     "base_url": _env.get("LLM_BASE_URL", ""),

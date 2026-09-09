@@ -26,9 +26,11 @@ def normalize_target(target):
 
 # name -> (command on PATH, winget id, choco id, brew id)
 TOOLS = {
-    "nmap":       ("nmap",       "Insecure.Nmap",        "nmap",       "nmap"),
-    "metasploit": ("msfconsole", "Rapid7.Metasploit",    "metasploit", "metasploit"),
-    "sqlmap":     ("sqlmap",     "sqlmapproject.sqlmap", "sqlmap",     "sqlmap"),
+    "nmap":       ("nmap",       "Insecure.Nmap",                "nmap",           "nmap"),
+    "metasploit": ("msfconsole", "Rapid7.Metasploit",            "metasploit",     "metasploit"),
+    "sqlmap":     ("sqlmap",     "sqlmapproject.sqlmap",         "sqlmap",         "sqlmap"),
+    "whois":      ("whois",      "Microsoft.Sysinternals.Whois", "whois",          "whois"),
+    "dig":        ("dig",        "ISC.BIND",                     "bind-toolsonly", "bind"),
 }
 
 
@@ -95,6 +97,39 @@ def run_nmap(target, args=None):
         return out.stdout or out.stderr
     except subprocess.TimeoutExpired:
         return "[nmap timed out]"
+
+
+def run_whois(target):
+    """Query WHOIS for a target if installed. Returns stdout (or error/not installed)."""
+    if not shutil.which("whois"):
+        return "[whois not installed]"
+    host = normalize_target(target)
+    if not host:
+        return "[no target]"
+    try:
+        out = subprocess.run(["whois", host], capture_output=True, text=True, timeout=20)
+        return out.stdout or out.stderr or "[no whois output]"
+    except subprocess.TimeoutExpired:
+        return "[whois timed out]"
+    except Exception as e:
+        return f"[whois error: {e}]"
+
+
+def run_dig(target, qtype="ANY"):
+    """Run DNS query with dig if installed. Returns stdout (or error/not installed)."""
+    if not shutil.which("dig"):
+        return "[dig not installed]"
+    host = normalize_target(target)
+    if not host:
+        return "[no target]"
+    try:
+        out = subprocess.run(["dig", "+nocmd", host, qtype, "+multiline", "+noall", "+answer"],
+                             capture_output=True, text=True, timeout=15)
+        return out.stdout or out.stderr or "[no dig output]"
+    except subprocess.TimeoutExpired:
+        return "[dig timed out]"
+    except Exception as e:
+        return f"[dig error: {e}]"
 
 
 if __name__ == "__main__":

@@ -12,7 +12,7 @@ from tkinter import ttk, messagebox
 
 import llm
 import tools
-from agents import exploitation, scanning
+from agents import exploitation, scanning, recon
 
 AGENTS = ["recon", "scanning", "exploitation", "loot", "postexploit"]
 
@@ -281,7 +281,14 @@ class App:
 
     def _work(self, agent, target):
         try:
-            if agent == "scanning":
+            if agent == "recon":
+                self.root.after(0, self.out.show_plain, f"[recon] gathering passive OSINT on {target} …")
+                prior = {k: v for k, v in self.context.items() if k != "recon"}
+                out = recon.run_recon(target, prior=prior)
+                self.context["recon"] = out
+                path = recon.save_report(target, out)
+                self.root.after(0, self.out.render, out + f"\n\n---\n*Report saved: `{path}`*")
+            elif agent == "scanning":
                 self.root.after(0, self.out.show_plain, f"[nmap] scanning {target} … (up to a minute)")
                 prior = {k: v for k, v in self.context.items() if k != "scanning"}
                 out = scanning.run_scanning(target, prior=prior)

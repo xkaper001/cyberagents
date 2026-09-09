@@ -95,6 +95,11 @@ class LLM:
         self.model = c["model"]
 
     def chat(self, system, user, temperature=0.2, timeout=120):
+        if not self.base_url:
+            return (
+                "[LLM ERROR] No LLM endpoint configured. Please set LLM_BASE_URL, "
+                "LLM_MODEL, and LLM_API_KEY in your .env file or click 'Configure LLM' in the app."
+            )
         body = json.dumps({
             "model": self.model,
             "temperature": temperature,
@@ -127,7 +132,8 @@ if __name__ == "__main__":
     assert c["source"] == "environment variables"
     assert _mask("sk-abcdef1234") == "sk-a…34"
     assert _mask("") == "(none)"
-    assert EMBEDDED["api_key"] not in describe(), "embedded key must never appear"
+    if EMBEDDED["api_key"]:
+        assert EMBEDDED["api_key"] not in describe(), "embedded key must never appear"
     del os.environ["LLM_BASE_URL"]
     print("llm config self-check ok")
     print(describe())
